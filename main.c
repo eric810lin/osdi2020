@@ -1,13 +1,22 @@
 #include "uart.h"
 #include "mailbox.h"
 #include "time.h"
+#include "irq_h.h"
+#include "sched.h"
+#include "fork.h"
+#include "sysc.h"
+
 #define input_buffer_Max 64
 
 
 extern int gtime_frq(void);
 extern int gtime_ct(void);
 
-int strcmp(char *a, char *b)
+/*static struct task_struct init_task = { {0,0,0,0,0,0,0,0,0,0,0,0,0}, 0,0,1};
+struct task_struct *current = &(init_task);
+struct task_struct * task_pool[NTASKS] = {&(init_task), };
+int tasks = 1;*/
+/*int strcmp(char *a, char *b)
 {
 	while(*a != '\0' || *b != '\n'){
 		if(*a != *b) return -1;
@@ -15,111 +24,120 @@ int strcmp(char *a, char *b)
 		b++;
 	}
 	return 0;
+}*/
+void foo(){
+	int tmp = 5;
+	int pid = get_taskid();
+	//char r2;
+	//r2 = tmp - '0';
+	call_sys_write("Task ");
+	uart_hex(pid);
+	call_sys_write(" after exec, tmp address 0x");
+	uart_hex((unsigned long)&tmp);
+	call_sys_write(", tmp value ");
+	uart_hex((unsigned long)tmp);
+	uart_send('\n');
+  	//printf("Task %d after exec, tmp address 0x%x, tmp value %d\n", get_taskid(), &tmp, tmp);
+  	call_sys_exit();
+	//while(1){
+  	call_sys_write("sye_exit fail!\n");
+
+	//	uart_puts("foo\n");
+	//	schedule();
+	//}
 }
+void test(){
+	int cnt =1;
+	unsigned long stack = call_sys_malloc();
 
-void help_cmd(void)
-{
-	uart_puts(" help      - print all available commands\n");
-	uart_puts(" hello     - print Hello World!\n");
-	uart_puts(" timestamp - print current timestamp\n");
-	uart_puts(" hwinfo    - print hardware infomation\n");
-	uart_puts(" exc       - issue [svc #1] and print return address,EC and ISS\n");
-	uart_puts(" exc       - issue [svc #0] to init irq and core timer\n");
-}
+	if(call_sys_clone((unsigned long)&foo, 0, stack) == 0)
+	{
+		call_sys_write("sye_exit fail!\n");
+		stack = call_sys_malloc();
+		call_sys_clone((unsigned long)&foo, 0, stack);
 
-void hardware_info(void)
-{
+		unsigned long stack = call_sys_malloc();
+		call_sys_clone(0, 0, stack);
 
-	get_board_revision();
-	uart_puts("Board revision : 0x");
-	uart_hex( mailbox[5] );
-	uart_puts("\n");
+		while(cnt < 10) {
+			call_sys_write("Task id:");
+			uart_hex(get_taskid());
+			call_sys_write(", cnt: ");
+			uart_hex(cnt);
+			call_sys_write("\n");
+      		//printf("Task id: %d, cnt: %d\n", get_taskid(), cnt);
+      		//delay(100000);
+      		++cnt;
+    	}
+    	call_sys_exit();
+	}
+	else{
+				call_sys_write("foo\n");
+
+	}
 	
-	get_vc_memory();
-	uart_puts("VC core base address : 0x");
-	uart_hex( mailbox[5] );
-	uart_puts("   size : 0x");
-	uart_hex( mailbox[6] );
-	uart_puts("\n");
 }
 
-void timestamp(void)
-{
-	float time=0.0,fpart;
-	int i=0,tmp,f_n=7,ipart;
-	char c[32];
-
-	time = (float)gtime_ct() / (float)gtime_frq();
-	ipart = (int)time;
-	fpart =  time - (float)ipart;
-
-
-	//uart_puts("[");
-	while(ipart){
-		c[i++]=(ipart%10) + '0';
-		//uart_puts(&c);
-		ipart/=10;
-	}
-	c[i++]='.';
-	while(f_n-- > 0){
-		c[i++]=(tmp=fpart*10) + '0';
-		//uart_puts(&c);
-		fpart=(fpart*10-(float)tmp);
-	}
-	c[i]='\0';
-
-	uart_send('[');
-	uart_puts(c);
-	uart_send(']');
+void user_test(){
+    uart_puts("Kernel process started.\n");
+    int err = move_to_user_mode((unsigned long)&test);
+    if (err < 0){
+        uart_puts("Error while moving process to user mode\n\r");
+    }
 }
+
+void idle(){
+  int i=1000000000;
+  while(1){
+    if(tasks == 1) {
+      break;
+    }
+    schedule();
+    while(i--){};
+  }
+  uart_puts("Test finished\n");
+  while(1);
+}
+
+void require1(){
+    while (1){
+        uart_puts("require1.\n");
+        schedule();
+    }
+}
+void require2(){
+    while (1){
+    	uart_puts("require2require2.\n");
+        schedule();
+    }
+}
+
 void main()
 {
-	char s[input_buffer_Max];
-	int i=0,j;
-	//unsigned long el;
+	//char s[input_buffer_Max];
+	//int i=0,j;
+	unsigned long el;
 
 	uart_init();
-	// read the current level from system register
-	//asm volatile ("mrs %0, CurrentEL" : "=r" (el));
+	irq_vector_init();
+	irq_enable();
+	core_timer_enable();
 
-	//uart_puts("Current EL is: ");
-	//uart_hex((el>>2)&3);
-	//uart_puts("\n");
+	asm volatile ("mrs %0, CurrentEL" : "=r" (el));
+
+	uart_puts("Current EL is: ");
+	uart_hex((el>>2)&3);
+	uart_puts("\n");
 	
-	uart_puts("# ");
+	/*require1.2*/
+	task_create(kernel_mode, require1, 0);
+	task_create(kernel_mode, require2, 0);
+
+	/*require3
+	task_create(kernel_mode, user_test, 0);
+	idle();*/
 	while(1){
-		if(i==input_buffer_Max || s[i-1]=='\n'){
-
-			if(i==input_buffer_Max) uart_puts("\n Error command length! \n");
-			else if(strcmp("help", s) == 0) 
-				help_cmd();
-			else if(strcmp("hello", s) == 0)
-				uart_puts(" Hello World! \n");
-			else if(strcmp("exc", s) == 0)
-				asm volatile ("svc #1");
-			else if(strcmp("irq", s) == 0)
-				asm volatile ("svc #0");
-			else if(strcmp("timestamp", s) == 0)
-			{
-				timestamp();
-				uart_send('\n');
-			}
-			else if(strcmp("hwinfo", s) == 0)
-				hardware_info();
-			else{
-				s[i-1]='\0';
-				uart_puts(" Error:command '");
-				uart_puts(s);
-				uart_puts("' not found, try <help>\n");
-			}
-			for(j=0;j<i;j++){
-			       	s[j]=0;
-			}
-
-			uart_puts("# ");
-			i=0;	
-		}
-		uart_send( ( s[i++] = uart_getc() ) );
+		schedule();
 	}
 }
 

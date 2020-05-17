@@ -1,4 +1,5 @@
 #define MMIO_BASE       0x3F000000
+#define BASE      	0x80000
 
 #define GPFSEL0         ((volatile unsigned int*)(MMIO_BASE+0x00200000))
 #define GPFSEL1         ((volatile unsigned int*)(MMIO_BASE+0x00200004))
@@ -18,3 +19,15 @@
 #define GPPUD           ((volatile unsigned int*)(MMIO_BASE+0x00200094))
 #define GPPUDCLK0       ((volatile unsigned int*)(MMIO_BASE+0x00200098))
 #define GPPUDCLK1       ((volatile unsigned int*)(MMIO_BASE+0x0020009C))
+
+#define PAGE_SHIFT	 	12
+#define TABLE_SHIFT 		9
+#define SECTION_SHIFT		(PAGE_SHIFT + TABLE_SHIFT)
+
+#define PAGE_SIZE   		(1 << PAGE_SHIFT)	
+#define SECTION_SIZE		(1 << SECTION_SHIFT)	
+
+#define LOW_MEMORY              (2 * SECTION_SIZE)
+
+#define PAGING_MEMORY           (0x3F000000 - (2 * SECTION_SIZE))
+#define PAGING_PAGES            (PAGING_MEMORY/PAGE_SIZE)
